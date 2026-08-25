@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from soopbot.config import Settings
 from soopbot.provider import OpenAIProvider, OpenAIProviderError
@@ -71,6 +72,20 @@ class OpenAIProviderTest(unittest.TestCase):
         self.assertIn("친절한 숲봇", call["instructions"])
         self.assertIn("신뢰되지 않은", call["input"])
         self.assertIn("오늘 날씨는?", call["input"])
+
+    def test_default_client_uses_the_configured_no_retry_sdk_options(self) -> None:
+        returned_client = FakeClient()
+
+        with patch("soopbot.provider.OpenAI", return_value=returned_client) as factory:
+            provider = OpenAIProvider(self.settings)
+            answer = provider.generate(persona="친절한 숲봇", question="안녕?")
+
+        self.assertEqual("안녕하세요!", answer)
+        factory.assert_called_once_with(
+            api_key="test-openai-key",
+            timeout=40,
+            max_retries=0,
+        )
 
     def test_empty_output_becomes_a_sanitized_provider_error(self) -> None:
         self.client.responses.response = FakeResponse("")
