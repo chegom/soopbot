@@ -1,14 +1,14 @@
 """Validated runtime settings for Soopbot."""
 
-from dataclasses import dataclass
 import os
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class Settings:
-    openai_api_key: str
-    bot_token: str
+    openai_api_key: str = field(repr=False)
+    bot_token: str = field(repr=False)
     trigger: str
     persona: str
     room_key: str

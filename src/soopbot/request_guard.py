@@ -4,7 +4,6 @@ import threading
 import time
 from typing import Literal
 
-
 MAX_RATE_WINDOW_SECONDS = 3600
 
 
@@ -12,7 +11,7 @@ class MemoryRequestGuard:
     """Guard requests using per-event expiry and per-room rate windows."""
 
     def __init__(self) -> None:
-        self._events: dict[str, tuple[str, float, float]] = {}
+        self._event_expiry: dict[str, float] = {}
         self._accepted_at_by_room: dict[str, list[float]] = {}
         self._lock = threading.Lock()
 
@@ -34,7 +33,7 @@ class MemoryRequestGuard:
             self._prune_expired(current_time)
             self._prune_rate_history(current_time)
 
-            if event_key in self._events:
+            if event_key in self._event_expiry:
                 return "duplicate"
 
             rate_window_start = current_time - rate_window_seconds
@@ -46,11 +45,7 @@ class MemoryRequestGuard:
             if current_room_count >= limit:
                 return "rate_limited"
 
-            self._events[event_key] = (
-                room_key,
-                current_time,
-                current_time + dedupe_window_seconds,
-            )
+            self._event_expiry[event_key] = current_time + dedupe_window_seconds
             self._accepted_at_by_room.setdefault(room_key, []).append(current_time)
             return "accepted"
 
@@ -74,11 +69,11 @@ class MemoryRequestGuard:
     def _prune_expired(self, now: float) -> None:
         expired_event_keys = [
             event_key
-            for event_key, (_, _, expires_at) in self._events.items()
+            for event_key, expires_at in self._event_expiry.items()
             if expires_at <= now
         ]
         for event_key in expired_event_keys:
-            del self._events[event_key]
+            del self._event_expiry[event_key]
 
     def _prune_rate_history(self, now: float) -> None:
         retention_start = now - MAX_RATE_WINDOW_SECONDS

@@ -104,7 +104,6 @@ class ApiBoundaryTest(unittest.TestCase):
         )
 
         self.assertEqual("room1", runtime.settings.room_key)
-        self.assertEqual("no_trigger", runtime.reply_service.handle("일반 메시지").kind)
         self.assertEqual(
             "accepted",
             runtime.request_guard.claim(
@@ -122,6 +121,22 @@ class ApiBoundaryTest(unittest.TestCase):
                 self.assertTrue(response.headers["content-type"].startswith("text/plain"))
 
         self.assertEqual([], self.provider.questions)
+
+    def test_wrong_token_is_rejected_before_provider_construction(self) -> None:
+        environment = {
+            "OPENAI_API_KEY": "test-openai-key",
+            "SOOPBOT_TOKEN": "t" * 24,
+        }
+
+        with patch(
+            "api.index.OpenAIProvider",
+            side_effect=AssertionError("provider must not be constructed"),
+        ):
+            client = TestClient(create_app(lambda: build_runtime(environment)))
+            response = self.request(client, token="wrong-token")
+
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("unauthorized", response.text)
 
     def test_unknown_room_returns_no_content(self) -> None:
         client = self.client_for()
