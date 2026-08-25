@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import ClientDisconnect
 
 from api.index import Runtime, build_runtime, create_app
 from soopbot.config import Settings
@@ -85,6 +86,14 @@ class ApiBoundaryTest(unittest.TestCase):
             self.assertEqual(200, response.status_code)
             self.assertEqual("ok", response.text)
             self.assertTrue(response.headers["content-type"].startswith("text/plain"))
+
+    def test_framework_documentation_routes_are_not_public(self) -> None:
+        client = self.client_for()
+
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            with self.subTest(path=path):
+                response = client.get(path)
+                self.assertEqual(404, response.status_code)
 
     def test_runtime_composition_uses_only_the_supplied_environment(self) -> None:
         runtime = build_runtime(
@@ -194,6 +203,42 @@ class ApiBoundaryTest(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertEqual(["at-cap", "overflow"], chunks_read)
         self.assertEqual([], self.provider.questions)
+
+    def test_client_disconnect_while_streaming_is_safe_and_sanitized(self) -> None:
+        client = self.client_for()
+
+        async def disconnected_stream(request):
+            if False:
+                yield b""
+            raise ClientDisconnect("private body and token must never reach logs")
+
+        with (
+            patch("api.index.Request.stream", new=disconnected_stream),
+            self.assertLogs("api.index", level="WARNING") as captured,
+        ):
+            response = self.request(
+                client,
+                "숲봇아 private-question",
+                token=self.settings.bot_token,
+                event_id="private-event-id",
+            )
+
+        self.assertEqual(503, response.status_code)
+        self.assertEqual("no-store", response.headers["cache-control"])
+        self.assertEqual(
+            "잠시 연결이 불안정해요. 조금 뒤에 숲봇을 다시 불러 주세요.", response.text
+        )
+        log_message = "\n".join(captured.output)
+        self.assertIn("stage=body", log_message)
+        self.assertIn("error_code=service_unavailable", log_message)
+        self.assertIn("error_type=ClientDisconnect", log_message)
+        for secret in (
+            "private body",
+            "private-question",
+            self.settings.bot_token,
+            "private-event-id",
+        ):
+            self.assertNotIn(secret, log_message)
 
     def test_trigger_returns_plain_text_generated_reply(self) -> None:
         client = self.client_for()

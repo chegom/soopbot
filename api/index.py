@@ -57,7 +57,7 @@ def build_runtime(environ: Mapping[str, str] | None = None) -> Runtime:
 
 def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
     """Create a testable app whose production runtime is initialized lazily."""
-    app = FastAPI()
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     cached_runtime: Runtime | None = None
 
     def get_runtime() -> Runtime:
@@ -91,7 +91,10 @@ def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
         if content_type.split(";", 1)[0].strip().lower() != "text/plain":
             return PlainTextResponse("bad request", status_code=400)
 
-        body = await _read_limited_body(request)
+        try:
+            body = await _read_limited_body(request)
+        except Exception as error:
+            return _service_unavailable("body", error)
         if not body or len(body) > _MAX_BODY_BYTES:
             return PlainTextResponse("bad request", status_code=400)
 

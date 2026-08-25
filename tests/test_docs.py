@@ -16,6 +16,39 @@ MARKDOWN_FILES = (
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_cost_controls_are_described_as_instance_local_not_global(self) -> None:
+        content = README.read_text(encoding="utf-8")
+        customize = (ROOT / "docs" / "customize.md").read_text(encoding="utf-8")
+
+        self.assertIn("전용 OpenAI 프로젝트와 API 키", content)
+        self.assertIn("usage/spend limits", content)
+        self.assertIn("알림", content)
+        self.assertIn("모델별 rate limit", content)
+        self.assertIn("warm Vercel 인스턴스별", content)
+        self.assertIn("전역 비용 상한이 아닙니다", content)
+        self.assertIn(
+            "https://help.openai.com/en/articles/9186755",
+            content,
+        )
+        self.assertIn("warm Vercel 인스턴스별 best-effort", customize)
+        self.assertIn("전역 비용 상한이 아닙니다", customize)
+        self.assertIn("https://help.openai.com/en/articles/9186755", customize)
+
+    def test_data_handling_scope_and_provider_policy_are_explicit(self) -> None:
+        content = README.read_text(encoding="utf-8")
+
+        self.assertNotIn("대화 기록을 저장하지 않습니다", content)
+        self.assertIn("숲봇 애플리케이션과 Vercel 함수", content)
+        self.assertIn("데이터베이스나 애플리케이션 로그", content)
+        self.assertIn("`store=False`", content)
+        self.assertIn("OpenAI 서비스의 데이터 처리", content)
+        self.assertIn("abuse monitoring", content)
+        self.assertIn(
+            "https://platform.openai.com/docs/models/default-usage-policies-by-endpoint",
+            content,
+        )
+        self.assertIn("개인정보나 비밀", content)
+
     def test_vercel_clone_link_requires_only_the_two_secrets(self) -> None:
         if not README.is_file():
             self.fail("README.md must provide the public deployment entry point")

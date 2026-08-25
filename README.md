@@ -1,11 +1,12 @@
 # 숲봇 (Soopbot)
 
-공폰의 카카오톡 알림을 MacroDroid가 받아 Vercel의 개인 서버로 보내고, OpenAI가 만든 답변을 알림 답장으로 돌려주는 공개 템플릿입니다. 기본 호출어는 `숲봇아`이며 대화 기록을 저장하지 않습니다.
+공폰의 카카오톡 알림을 MacroDroid가 받아 Vercel의 개인 서버로 보내고, OpenAI가 만든 답변을 알림 답장으로 돌려주는 공개 템플릿입니다. 기본 호출어는 `숲봇아`이며 이전 대화 문맥 없이 한 번에 한 질문에 답합니다.
 
 > [!IMPORTANT]
 > - **ChatGPT Plus·Pro 같은 구독료에는 OpenAI API 사용료가 포함되지 않습니다.**
 > - 배포한 사람이 자신의 OpenAI API 사용료를 직접 부담합니다.
 > - 이 저장소와 저장소 운영자는 사용자의 API 키를 받거나 저장하지 않습니다. 키는 사용자가 자신의 Vercel 프로젝트 환경변수에 직접 입력합니다.
+> - 숲봇용 **전용 OpenAI 프로젝트와 API 키**를 만들고, 프로젝트의 **usage/spend limits와 알림**을 설정하세요. 계정과 모델에는 [모델별 rate limit](https://help.openai.com/en/articles/9186755)도 적용됩니다.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Fchegom%2Fsoopbot&env=OPENAI_API_KEY%2CSOOPBOT_TOKEN&envDescription=OpenAI%20API%20키와%2024자%20이상의%20숲봇%20전용%20토큰이%20필요합니다.&project-name=soopbot&repository-name=soopbot)
 
@@ -40,8 +41,8 @@
 
 - 호출어 뒤의 한 질문만 OpenAI에 전달하는 무상태 방식입니다.
 - 도구 호출, 웹 검색, 이전 대화 기억, 데이터베이스, 공지·브리핑 기능은 포함하지 않습니다.
-- 숲봇 애플리케이션은 요청 본문과 답변을 별도 데이터베이스나 로그에 저장하지 않으며, OpenAI 요청에도 저장 비활성화 옵션을 사용합니다.
-- 같은 알림의 짧은 시간 내 중복 처리와 과도한 요청을 서버 인스턴스 메모리에서 제한합니다. 서버가 새로 시작되면 이 임시 상태는 초기화될 수 있습니다.
+- 숲봇 애플리케이션과 Vercel 함수는 질문·답변을 데이터베이스나 애플리케이션 로그에 저장하지 않으며, OpenAI 요청에는 `store=False`를 사용합니다. 다만 [OpenAI 서비스의 데이터 처리 및 abuse monitoring 보존 정책](https://platform.openai.com/docs/models/default-usage-policies-by-endpoint)은 별도로 적용될 수 있습니다. 개인정보나 비밀은 질문에 보내지 마세요.
+- 같은 알림의 중복 억제와 분당 요청 제한은 **warm Vercel 인스턴스별 best-effort 보호**입니다. 새 인스턴스가 시작되면 임시 상태가 초기화되고 인스턴스끼리 공유되지 않으므로, 이 설정은 내구성 있는 전역 rate limit이나 **전역 비용 상한이 아닙니다**. 실제 비용 관리는 위의 OpenAI 프로젝트 usage/spend limits와 알림을 사용하세요.
 - 방 키 기본값은 `room1`입니다. 공개 URL을 알아도 전용 토큰이 없으면 답변을 요청할 수 없습니다.
 
 ## 원하는 이름과 말투로 바꾸기
