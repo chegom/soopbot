@@ -1,14 +1,14 @@
 """Validated runtime settings for Soopbot."""
 
-from dataclasses import dataclass
 import os
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class Settings:
-    openai_api_key: str
-    bot_token: str
+    openai_api_key: str = field(repr=False)
+    bot_token: str = field(repr=False)
     trigger: str
     persona: str
     room_key: str
@@ -23,9 +23,7 @@ class Settings:
         values = os.environ if environ is None else environ
 
         openai_api_key = _required_text(values, "OPENAI_API_KEY", maximum=512)
-        bot_token = _required_text(values, "SOOPBOT_TOKEN", maximum=512)
-        if len(bot_token) < 24:
-            raise ValueError("SOOPBOT_TOKEN must be at least 24 characters")
+        bot_token = load_bot_token(values)
 
         return cls(
             openai_api_key=openai_api_key,
@@ -52,6 +50,15 @@ class Settings:
                 values, "SOOPBOT_REQUESTS_PER_MINUTE", 10, minimum=1, maximum=120
             ),
         )
+
+
+def load_bot_token(environ: Mapping[str, str] | None = None) -> str:
+    """Load only the credential needed to authenticate an inbound request."""
+    values = os.environ if environ is None else environ
+    bot_token = _required_text(values, "SOOPBOT_TOKEN", maximum=512)
+    if len(bot_token) < 24:
+        raise ValueError("SOOPBOT_TOKEN must be at least 24 characters")
+    return bot_token
 
 
 def _required_text(values: Mapping[str, str], name: str, maximum: int) -> str:

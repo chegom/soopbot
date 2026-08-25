@@ -9,11 +9,23 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-
 ALLOWED_ENV_FILES = {".env.example"}
+SECRET_PREFIXES = (
+    "s" + "k-",
+    "g" + "ho_",
+    "g" + "hp_",
+    "g" + "hs_",
+    "g" + "hr_",
+    "g" + "hu_",
+    "github" + "_pat_",
+    "s" + "b_" + "secret_",
+)
 SECRET_PATTERNS = tuple(
     re.compile(re.escape(prefix.encode()) + rb"[A-Za-z0-9_-]{16,}")
-    for prefix in ("s" + "k-", "g" + "ho_", "s" + "b_" + "secret_")
+    for prefix in SECRET_PREFIXES
+)
+PRIVATE_KEY_PATTERN = re.compile(
+    b"-----BEGIN " + rb"(?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
 )
 MACHINE_MARKERS = (
     ("/" + "Users" + "/").encode(),
@@ -46,11 +58,15 @@ def forbidden_path_reason(relative_path: str) -> str | None:
         return "Vercel local metadata"
     if "__pycache__" in parts or name.endswith((".pyc", ".pyo")):
         return "Python generated file"
+    if any(part.endswith(".egg-info") for part in parts):
+        return "Python package metadata"
     return None
 
 
 def content_reason(content: bytes) -> str | None:
-    if any(pattern.search(content) for pattern in SECRET_PATTERNS):
+    if PRIVATE_KEY_PATTERN.search(content) or any(
+        pattern.search(content) for pattern in SECRET_PATTERNS
+    ):
         return "secret-like content"
     if any(marker in content for marker in MACHINE_MARKERS):
         return "machine-specific content"

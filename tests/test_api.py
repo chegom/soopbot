@@ -1,4 +1,5 @@
 import asyncio
+import os
 import unittest
 from dataclasses import replace
 from unittest.mock import patch
@@ -56,7 +57,12 @@ class ApiBoundaryTest(unittest.TestCase):
             reply_service=ReplyService(active_settings, self.provider),
             request_guard=guard or MemoryRequestGuard(),
         )
-        return TestClient(create_app(lambda: runtime))
+        return TestClient(
+            create_app(
+                lambda: runtime,
+                bot_token_provider=lambda: active_settings.bot_token,
+            )
+        )
 
     def request(
         self,
@@ -104,7 +110,6 @@ class ApiBoundaryTest(unittest.TestCase):
         )
 
         self.assertEqual("room1", runtime.settings.room_key)
-        self.assertEqual("no_trigger", runtime.reply_service.handle("일반 메시지").kind)
         self.assertEqual(
             "accepted",
             runtime.request_guard.claim(
@@ -122,6 +127,165 @@ class ApiBoundaryTest(unittest.TestCase):
                 self.assertTrue(response.headers["content-type"].startswith("text/plain"))
 
         self.assertEqual([], self.provider.questions)
+
+    def test_wrong_token_is_rejected_before_provider_construction(self) -> None:
+        environment = {
+            "OPENAI_API_KEY": "test-openai-key",
+            "SOOPBOT_TOKEN": "t" * 24,
+        }
+
+        with patch(
+            "api.index.OpenAIProvider",
+            side_effect=AssertionError("provider must not be constructed"),
+        ):
+            client = TestClient(
+                create_app(
+                    lambda: build_runtime(environment),
+                    bot_token_provider=lambda: environment["SOOPBOT_TOKEN"],
+                )
+            )
+            response = self.request(client, token="wrong-token")
+
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("unauthorized", response.text)
+
+    def test_invalid_token_does_not_require_unrelated_openai_configuration(self) -> None:
+        environment = {"SOOPBOT_TOKEN": "t" * 24}
+
+        with patch.dict(os.environ, environment, clear=True):
+            client = TestClient(create_app(build_runtime))
+            for token in (None, "wrong-token"):
+                with self.subTest(token=token):
+                    response = self.request(client, token=token)
+
+                    self.assertEqual(401, response.status_code)
+                    self.assertEqual("unauthorized", response.text)
+
+    def test_no_trigger_does_not_construct_provider(self) -> None:
+        environment = {
+            "OPENAI_API_KEY": "test-openai-key",
+            "SOOPBOT_TOKEN": "t" * 24,
+        }
+
+        with patch(
+            "api.index.OpenAIProvider",
+            side_effect=AssertionError("provider must not be constructed"),
+        ):
+            client = TestClient(
+                create_app(
+                    lambda: build_runtime(environment),
+                    bot_token_provider=lambda: environment["SOOPBOT_TOKEN"],
+                )
+            )
+            response = self.request(
+                client,
+                content="일반 메시지",
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="no-trigger",
+            )
+
+        self.assertEqual(204, response.status_code)
+
+    def test_oversized_question_does_not_construct_provider(self) -> None:
+        environment = {
+            "OPENAI_API_KEY": "test-openai-key",
+            "SOOPBOT_TOKEN": "t" * 24,
+        }
+
+        with patch(
+            "api.index.OpenAIProvider",
+            side_effect=AssertionError("provider must not be constructed"),
+        ):
+            client = TestClient(
+                create_app(
+                    lambda: build_runtime(environment),
+                    bot_token_provider=lambda: environment["SOOPBOT_TOKEN"],
+                )
+            )
+            response = self.request(
+                client,
+                content="숲봇아 " + "가" * 4_000,
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="oversized-question",
+            )
+
+        self.assertEqual(400, response.status_code)
+
+    def test_duplicate_and_rate_limit_do_not_construct_provider(self) -> None:
+        environment = {
+            "OPENAI_API_KEY": "test-openai-key",
+            "SOOPBOT_TOKEN": "t" * 24,
+            "SOOPBOT_REQUESTS_PER_MINUTE": "1",
+        }
+
+        with patch(
+            "api.index.OpenAIProvider",
+            side_effect=AssertionError("provider must not be constructed"),
+        ):
+            client = TestClient(
+                create_app(
+                    lambda: build_runtime(environment),
+                    bot_token_provider=lambda: environment["SOOPBOT_TOKEN"],
+                )
+            )
+            accepted = self.request(
+                client,
+                content="일반 메시지",
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="one",
+            )
+            duplicate = self.request(
+                client,
+                content="일반 메시지",
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="one",
+            )
+            limited = self.request(
+                client,
+                content="다른 일반 메시지",
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="two",
+            )
+
+        self.assertEqual(204, accepted.status_code)
+        self.assertEqual(204, duplicate.status_code)
+        self.assertEqual(429, limited.status_code)
+
+    def test_generated_replies_reuse_one_lazily_constructed_provider(self) -> None:
+        environment = {
+            "OPENAI_API_KEY": "test-openai-key",
+            "SOOPBOT_TOKEN": "t" * 24,
+        }
+        constructed_for: list[Settings] = []
+
+        def construct_provider(settings: Settings) -> RecordingProvider:
+            constructed_for.append(settings)
+            return self.provider
+
+        with patch("api.index.OpenAIProvider", side_effect=construct_provider):
+            client = TestClient(
+                create_app(
+                    lambda: build_runtime(environment),
+                    bot_token_provider=lambda: environment["SOOPBOT_TOKEN"],
+                )
+            )
+            first = self.request(
+                client,
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="generated-one",
+            )
+            second = self.request(
+                client,
+                content="숲봇아 두 번째",
+                token=environment["SOOPBOT_TOKEN"],
+                event_id="generated-two",
+            )
+
+        self.assertEqual(200, first.status_code)
+        self.assertEqual(200, second.status_code)
+        self.assertEqual(["안녕", "두 번째"], self.provider.questions)
+        self.assertEqual(1, len(constructed_for))
+        self.assertEqual("room1", constructed_for[0].room_key)
 
     def test_unknown_room_returns_no_content(self) -> None:
         client = self.client_for()
@@ -295,7 +459,8 @@ class ApiBoundaryTest(unittest.TestCase):
                     create_app(
                         lambda: (_ for _ in ()).throw(
                             RuntimeError("runtime detail must never reach logs")
-                        )
+                        ),
+                        bot_token_provider=lambda: secret_token,
                     )
                 ),
             ),

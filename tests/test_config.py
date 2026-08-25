@@ -19,6 +19,14 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(1000, settings.max_output_chars)
         self.assertEqual(10, settings.requests_per_minute)
 
+    def test_secret_values_are_not_exposed_by_repr(self) -> None:
+        settings = Settings.from_environ(self.valid_environment())
+
+        rendered = repr(settings)
+
+        self.assertNotIn("test-openai-key", rendered)
+        self.assertNotIn("t" * 24, rendered)
+
     def test_required_secrets_and_bounds_are_rejected(self) -> None:
         invalid_cases = [
             ({"OPENAI_API_KEY": "", "SOOPBOT_TOKEN": "t" * 24}, "OPENAI_API_KEY"),

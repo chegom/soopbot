@@ -1,27 +1,28 @@
 """Secure, stateless HTTP entry point for the Soopbot Vercel function."""
 
-from dataclasses import dataclass
 import hashlib
 import hmac
 import logging
-from pathlib import Path
 import sys
+import threading
 import time
-from typing import Callable, Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Security
 from fastapi.responses import PlainTextResponse, Response
-
+from fastapi.security import APIKeyHeader
 
 _SOURCE_DIRECTORY = Path(__file__).resolve().parents[1] / "src"
 if str(_SOURCE_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(_SOURCE_DIRECTORY))
 
-from soopbot.config import Settings
+from soopbot.config import Settings, load_bot_token
 from soopbot.provider import OpenAIProvider
 from soopbot.reply import ReplyService
 from soopbot.request_guard import MemoryRequestGuard
-
 
 logger = logging.getLogger(__name__)
 
@@ -40,31 +41,124 @@ class Runtime:
     """Dependencies that persist for a warm serverless function instance."""
 
     settings: Settings
-    reply_service: ReplyService
     request_guard: MemoryRequestGuard
+    reply_service: ReplyService | None = None
 
 
 def build_runtime(environ: Mapping[str, str] | None = None) -> Runtime:
-    """Build the production dependencies only when the reply route needs them."""
+    """Build settings and local safeguards without initializing OpenAI."""
     settings = Settings.from_environ(environ)
-    provider = OpenAIProvider(settings)
     return Runtime(
         settings=settings,
-        reply_service=ReplyService(settings, provider),
         request_guard=MemoryRequestGuard(),
     )
 
 
-def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
+def build_reply_service(settings: Settings) -> ReplyService:
+    """Build the external provider only after a request is authenticated."""
+    return ReplyService(settings, _LazyOpenAIProvider(settings))
+
+
+class _LazyOpenAIProvider:
+    """Initialize the SDK only when a validated question needs generation."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._provider: OpenAIProvider | None = None
+        self._lock = threading.Lock()
+
+    def generate(self, *, persona: str, question: str) -> str:
+        if self._provider is None:
+            with self._lock:
+                if self._provider is None:
+                    self._provider = OpenAIProvider(self._settings)
+        return self._provider.generate(persona=persona, question=question)
+
+
+class _UnauthorizedRequest(Exception):
+    """Signal a failed bot-token check without exposing token details."""
+
+
+class _UnavailableDependency(Exception):
+    """Carry a sanitized service-unavailable stage to the response handler."""
+
+    def __init__(self, stage: str, error: Exception) -> None:
+        super().__init__(stage)
+        self.stage = stage
+        self.error = error
+
+
+def create_app(
+    runtime_provider: Callable[[], Runtime],
+    *,
+    bot_token_provider: Callable[[], str] = load_bot_token,
+    reply_service_provider: Callable[[Settings], ReplyService] = build_reply_service,
+) -> FastAPI:
     """Create a testable app whose production runtime is initialized lazily."""
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    cached_bot_token: str | None = None
     cached_runtime: Runtime | None = None
+    cached_reply_service: ReplyService | None = None
+    cache_lock = threading.Lock()
+    bot_token_header = APIKeyHeader(name="X-Bot-Token", auto_error=False)
+
+    def get_bot_token() -> str:
+        nonlocal cached_bot_token
+        if cached_bot_token is None:
+            with cache_lock:
+                if cached_bot_token is None:
+                    cached_bot_token = bot_token_provider()
+        return cached_bot_token
 
     def get_runtime() -> Runtime:
         nonlocal cached_runtime
         if cached_runtime is None:
-            cached_runtime = runtime_provider()
+            with cache_lock:
+                if cached_runtime is None:
+                    cached_runtime = runtime_provider()
         return cached_runtime
+
+    def get_reply_service(runtime: Runtime) -> ReplyService:
+        nonlocal cached_reply_service
+        if runtime.reply_service is not None:
+            return runtime.reply_service
+        if cached_reply_service is None:
+            with cache_lock:
+                if cached_reply_service is None:
+                    cached_reply_service = reply_service_provider(runtime.settings)
+        return cached_reply_service
+
+    async def authenticated_runtime(
+        provided_token: Annotated[str | None, Security(bot_token_header)],
+    ) -> Runtime:
+        try:
+            expected_token = get_bot_token()
+        except Exception as error:
+            raise _UnavailableDependency("auth", error) from error
+
+        candidate = provided_token or ""
+        if not hmac.compare_digest(
+            candidate.encode("utf-8"), expected_token.encode("utf-8")
+        ):
+            raise _UnauthorizedRequest
+
+        try:
+            runtime = get_runtime()
+        except Exception as error:
+            raise _UnavailableDependency("runtime", error) from error
+        return runtime
+
+    @app.exception_handler(_UnauthorizedRequest)
+    async def unauthorized_response(
+        _request: Request, _error: _UnauthorizedRequest
+    ) -> PlainTextResponse:
+        return PlainTextResponse("unauthorized", status_code=401)
+
+    @app.exception_handler(_UnavailableDependency)
+    async def unavailable_dependency_response(
+        _request: Request, error: _UnavailableDependency
+    ) -> PlainTextResponse:
+        return _service_unavailable(error.stage, error.error)
 
     @app.get("/", response_class=PlainTextResponse)
     @app.get("/api/reply", response_class=PlainTextResponse)
@@ -72,18 +166,11 @@ def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
         return PlainTextResponse("ok")
 
     @app.post("/api/reply")
-    async def reply(request: Request, room: str | None = None) -> Response:
-        try:
-            runtime = get_runtime()
-        except Exception as error:
-            return _service_unavailable("runtime", error)
-
-        provided_token = request.headers.get("x-bot-token", "")
-        if not hmac.compare_digest(
-            provided_token.encode("utf-8"), runtime.settings.bot_token.encode("utf-8")
-        ):
-            return PlainTextResponse("unauthorized", status_code=401)
-
+    async def reply(
+        request: Request,
+        runtime: Annotated[Runtime, Depends(authenticated_runtime)],
+        room: str | None = None,
+    ) -> Response:
         if room != runtime.settings.room_key:
             return Response(status_code=204)
 
@@ -127,7 +214,7 @@ def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
             )
 
         try:
-            outcome = runtime.reply_service.handle(content)
+            outcome = get_reply_service(runtime).handle(content)
         except ValueError:
             return PlainTextResponse("bad request", status_code=400)
         except Exception as error:
