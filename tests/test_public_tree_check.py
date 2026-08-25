@@ -55,6 +55,7 @@ class PublicTreeCheckTests(unittest.TestCase):
                 ".env.local": "SAFE_PLACEHOLDER=replace-me\n",
                 ".vercel/project.json": "{}\n",
                 "src/__pycache__/main.pyc": "not-bytecode\n",
+                "src/soopbot.egg-info/PKG-INFO": "generated metadata\n",
             }
         )
 
@@ -62,6 +63,7 @@ class PublicTreeCheckTests(unittest.TestCase):
         self.assertIn(".env.local", result.stderr)
         self.assertIn(".vercel/project.json", result.stderr)
         self.assertIn("src/__pycache__/main.pyc", result.stderr)
+        self.assertIn("src/soopbot.egg-info/PKG-INFO", result.stderr)
 
     def test_obvious_secret_value_in_tracked_content_fails(self) -> None:
         secret_prefix = "s" + "k-"
@@ -71,6 +73,26 @@ class PublicTreeCheckTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("notes.txt", result.stderr)
+        self.assertIn("secret-like content", result.stderr)
+
+    def test_github_fine_grained_token_in_tracked_content_fails(self) -> None:
+        secret_prefix = "github" + "_pat_"
+        result = self._run_checker(
+            {"notes.txt": f"TOKEN={secret_prefix}{'x' * 24}\n"}
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("notes.txt", result.stderr)
+        self.assertIn("secret-like content", result.stderr)
+
+    def test_private_key_in_tracked_content_fails(self) -> None:
+        private_key_marker = "-----BEGIN " + "PRIVATE KEY-----"
+        result = self._run_checker(
+            {"private.pem": f"{private_key_marker}\nnot-a-real-key\n"}
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("private.pem", result.stderr)
         self.assertIn("secret-like content", result.stderr)
 
     def test_machine_specific_path_in_tracked_content_fails(self) -> None:
