@@ -5,6 +5,9 @@ import time
 from typing import Literal
 
 
+MAX_RATE_WINDOW_SECONDS = 3600
+
+
 class MemoryRequestGuard:
     """Guard requests using per-event expiry and per-room rate windows."""
 
@@ -29,6 +32,7 @@ class MemoryRequestGuard:
 
         with self._lock:
             self._prune_expired(current_time)
+            self._prune_rate_history(current_time)
 
             if event_key in self._events:
                 return "duplicate"
@@ -60,6 +64,10 @@ class MemoryRequestGuard:
             raise ValueError("limit must be positive")
         if rate_window_seconds <= 0:
             raise ValueError("rate_window_seconds must be positive")
+        if rate_window_seconds > MAX_RATE_WINDOW_SECONDS:
+            raise ValueError(
+                f"rate_window_seconds must be at most {MAX_RATE_WINDOW_SECONDS}"
+            )
         if dedupe_window_seconds <= 0:
             raise ValueError("dedupe_window_seconds must be positive")
 
@@ -71,3 +79,14 @@ class MemoryRequestGuard:
         ]
         for event_key in expired_event_keys:
             del self._events[event_key]
+
+    def _prune_rate_history(self, now: float) -> None:
+        retention_start = now - MAX_RATE_WINDOW_SECONDS
+        for room_key, accepted_at in list(self._accepted_at_by_room.items()):
+            retained_timestamps = [
+                created_at for created_at in accepted_at if created_at > retention_start
+            ]
+            if retained_timestamps:
+                self._accepted_at_by_room[room_key] = retained_timestamps
+            else:
+                del self._accepted_at_by_room[room_key]

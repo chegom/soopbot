@@ -103,6 +103,49 @@ class MemoryRequestGuardTest(unittest.TestCase):
 
         self.assertEqual("rate_limited", outcome)
 
+    def test_obsolete_rate_history_is_pruned_and_empty_rooms_are_removed(self) -> None:
+        self.guard.claim(
+            "event-old-1",
+            "room-old",
+            limit=10,
+            rate_window_seconds=3600,
+            dedupe_window_seconds=1,
+            now=0.0,
+        )
+        self.guard.claim(
+            "event-old-2",
+            "room-old",
+            limit=10,
+            rate_window_seconds=3600,
+            dedupe_window_seconds=1,
+            now=1.0,
+        )
+
+        self.guard.claim(
+            "event-current",
+            "room-current",
+            limit=10,
+            rate_window_seconds=3600,
+            dedupe_window_seconds=1,
+            now=3602.0,
+        )
+
+        # No public outcome distinguishes old rate-history retention, so this
+        # narrow state assertion protects the bounded-memory requirement.
+        self.assertNotIn("room-old", self.guard._accepted_at_by_room)
+        self.assertEqual([3602.0], self.guard._accepted_at_by_room["room-current"])
+
+    def test_rate_window_cannot_exceed_retention_bound(self) -> None:
+        with self.assertRaises(ValueError):
+            self.guard.claim(
+                "event-1",
+                "room-1",
+                limit=1,
+                rate_window_seconds=3601,
+                dedupe_window_seconds=1,
+                now=100.0,
+            )
+
     def test_later_short_dedupe_window_does_not_remove_long_lived_event(self) -> None:
         self.guard.claim(
             "event-long",
