@@ -16,6 +16,7 @@ SECRET_PREFIXES = (
     "g" + "hp_",
     "g" + "hs_",
     "g" + "hr_",
+    "g" + "hu_",
     "github" + "_pat_",
     "s" + "b_" + "secret_",
 )
@@ -24,7 +25,7 @@ SECRET_PATTERNS = tuple(
     for prefix in SECRET_PREFIXES
 )
 PRIVATE_KEY_PATTERN = re.compile(
-    b"-----BEGIN " + rb"(?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+    b"-----BEGIN " + rb"(?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
 )
 MACHINE_MARKERS = (
     ("/" + "Users" + "/").encode(),

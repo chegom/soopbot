@@ -19,7 +19,7 @@ _SOURCE_DIRECTORY = Path(__file__).resolve().parents[1] / "src"
 if str(_SOURCE_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(_SOURCE_DIRECTORY))
 
-from soopbot.config import Settings
+from soopbot.config import Settings, load_bot_token
 from soopbot.provider import OpenAIProvider
 from soopbot.reply import ReplyService
 from soopbot.request_guard import MemoryRequestGuard
@@ -56,7 +56,23 @@ def build_runtime(environ: Mapping[str, str] | None = None) -> Runtime:
 
 def build_reply_service(settings: Settings) -> ReplyService:
     """Build the external provider only after a request is authenticated."""
-    return ReplyService(settings, OpenAIProvider(settings))
+    return ReplyService(settings, _LazyOpenAIProvider(settings))
+
+
+class _LazyOpenAIProvider:
+    """Initialize the SDK only when a validated question needs generation."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._provider: OpenAIProvider | None = None
+        self._lock = threading.Lock()
+
+    def generate(self, *, persona: str, question: str) -> str:
+        if self._provider is None:
+            with self._lock:
+                if self._provider is None:
+                    self._provider = OpenAIProvider(self._settings)
+        return self._provider.generate(persona=persona, question=question)
 
 
 class _UnauthorizedRequest(Exception):
@@ -74,14 +90,25 @@ class _UnavailableDependency(Exception):
 
 def create_app(
     runtime_provider: Callable[[], Runtime],
+    *,
+    bot_token_provider: Callable[[], str] = load_bot_token,
     reply_service_provider: Callable[[Settings], ReplyService] = build_reply_service,
 ) -> FastAPI:
     """Create a testable app whose production runtime is initialized lazily."""
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    cached_bot_token: str | None = None
     cached_runtime: Runtime | None = None
     cached_reply_service: ReplyService | None = None
     cache_lock = threading.Lock()
     bot_token_header = APIKeyHeader(name="X-Bot-Token", auto_error=False)
+
+    def get_bot_token() -> str:
+        nonlocal cached_bot_token
+        if cached_bot_token is None:
+            with cache_lock:
+                if cached_bot_token is None:
+                    cached_bot_token = bot_token_provider()
+        return cached_bot_token
 
     def get_runtime() -> Runtime:
         nonlocal cached_runtime
@@ -105,15 +132,20 @@ def create_app(
         provided_token: Annotated[str | None, Security(bot_token_header)],
     ) -> Runtime:
         try:
-            runtime = get_runtime()
+            expected_token = get_bot_token()
         except Exception as error:
-            raise _UnavailableDependency("runtime", error) from error
+            raise _UnavailableDependency("auth", error) from error
 
         candidate = provided_token or ""
         if not hmac.compare_digest(
-            candidate.encode("utf-8"), runtime.settings.bot_token.encode("utf-8")
+            candidate.encode("utf-8"), expected_token.encode("utf-8")
         ):
             raise _UnauthorizedRequest
+
+        try:
+            runtime = get_runtime()
+        except Exception as error:
+            raise _UnavailableDependency("runtime", error) from error
         return runtime
 
     @app.exception_handler(_UnauthorizedRequest)

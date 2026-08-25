@@ -53,7 +53,7 @@
 
 - 답이 없거나 `400`, `401`, `429`, `503`이 보일 때: [문제 해결](docs/troubleshooting.md)
 - 키 노출 또는 보안 문제를 발견했을 때: [보안 정책](SECURITY.md)
-- 로컬에서 검사할 때: Python 3.12 환경에서 `python -m pip install -e '.[test]'` 후 `PYTHONPATH=src python -m unittest discover -s tests -v`
+- 로컬에서 검사할 때: Python 3.12와 [uv](https://docs.astral.sh/uv/getting-started/installation/)를 준비하고 `uv sync --locked --extra test` 후 `PYTHONPATH=src uv run --locked python -m unittest discover -s tests -v`
 
 ## 범위와 라이선스
 

@@ -85,8 +85,28 @@ class PublicTreeCheckTests(unittest.TestCase):
         self.assertIn("notes.txt", result.stderr)
         self.assertIn("secret-like content", result.stderr)
 
+    def test_github_user_token_in_tracked_content_fails(self) -> None:
+        secret_prefix = "g" + "hu_"
+        result = self._run_checker(
+            {"notes.txt": f"TOKEN={secret_prefix}{'x' * 24}\n"}
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("notes.txt", result.stderr)
+        self.assertIn("secret-like content", result.stderr)
+
     def test_private_key_in_tracked_content_fails(self) -> None:
         private_key_marker = "-----BEGIN " + "PRIVATE KEY-----"
+        result = self._run_checker(
+            {"private.pem": f"{private_key_marker}\nnot-a-real-key\n"}
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("private.pem", result.stderr)
+        self.assertIn("secret-like content", result.stderr)
+
+    def test_dsa_private_key_in_tracked_content_fails(self) -> None:
+        private_key_marker = "-----BEGIN " + "DSA PRIVATE KEY-----"
         result = self._run_checker(
             {"private.pem": f"{private_key_marker}\nnot-a-real-key\n"}
         )
