@@ -10,6 +10,7 @@ class MemoryRequestGuard:
 
     def __init__(self) -> None:
         self._events: dict[str, tuple[str, float, float]] = {}
+        self._accepted_at_by_room: dict[str, list[float]] = {}
         self._lock = threading.Lock()
 
     def claim(
@@ -35,9 +36,8 @@ class MemoryRequestGuard:
             rate_window_start = current_time - rate_window_seconds
             current_room_count = sum(
                 1
-                for event_room_key, created_at, _ in self._events.values()
-                if event_room_key == room_key
-                and rate_window_start < created_at <= current_time
+                for created_at in self._accepted_at_by_room.get(room_key, [])
+                if rate_window_start < created_at <= current_time
             )
             if current_room_count >= limit:
                 return "rate_limited"
@@ -47,6 +47,7 @@ class MemoryRequestGuard:
                 current_time,
                 current_time + dedupe_window_seconds,
             )
+            self._accepted_at_by_room.setdefault(room_key, []).append(current_time)
             return "accepted"
 
     @staticmethod

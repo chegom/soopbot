@@ -82,6 +82,27 @@ class MemoryRequestGuardTest(unittest.TestCase):
 
         self.assertEqual("accepted", outcome)
 
+    def test_short_dedupe_window_does_not_bypass_longer_rate_window(self) -> None:
+        self.guard.claim(
+            "event-1",
+            "room-1",
+            limit=1,
+            rate_window_seconds=60,
+            dedupe_window_seconds=1,
+            now=100.0,
+        )
+
+        outcome = self.guard.claim(
+            "event-2",
+            "room-1",
+            limit=1,
+            rate_window_seconds=60,
+            dedupe_window_seconds=1,
+            now=102.0,
+        )
+
+        self.assertEqual("rate_limited", outcome)
+
     def test_later_short_dedupe_window_does_not_remove_long_lived_event(self) -> None:
         self.guard.claim(
             "event-long",
