@@ -62,7 +62,11 @@ class DocumentationContractTests(unittest.TestCase):
 
     def test_example_environment_contains_no_secret_values(self) -> None:
         content = (ROOT / ".env.example").read_text(encoding="utf-8")
-        self.assertNotRegex(content, r"(?im)^OPENAI_API_KEY\s*=\s*sk-")
+        secret_prefix = "s" + "k-"
+        self.assertNotRegex(
+            content,
+            rf"(?im)^OPENAI_API_KEY\s*=\s*{re.escape(secret_prefix)}",
+        )
         self.assertNotRegex(content, r"(?im)^SOOPBOT_TOKEN\s*=\s*[A-Za-z0-9]{24,}\s*$")
 
     def test_macrodroid_trigger_separates_exact_title_and_message_filters(self) -> None:

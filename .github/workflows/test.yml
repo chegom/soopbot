@@ -1,0 +1,40 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: python -m pip install -e '.[test]'
+
+      - name: Compile Python sources
+        run: python -m compileall -q src api tests
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+
+      - name: Reject empty or truncated test discovery
+        env:
+          PYTHONPATH: src
+        run: python scripts/check_test_discovery.py --minimum 40
+
+      - name: Check the tracked public tree
+        run: python scripts/check_public_tree.py
