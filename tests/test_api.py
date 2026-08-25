@@ -1,8 +1,10 @@
+import asyncio
 import unittest
 from dataclasses import replace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from api.index import Runtime, build_runtime, create_app
 from soopbot.config import Settings
@@ -141,6 +143,56 @@ class ApiBoundaryTest(unittest.TestCase):
                 self.assertEqual(400, response.status_code)
                 self.assertTrue(response.headers["content-type"].startswith("text/plain"))
 
+        self.assertEqual([], self.provider.questions)
+
+    def test_invalid_or_oversized_content_length_is_rejected_before_body_use(self) -> None:
+        client = self.client_for()
+        headers = {
+            "Content-Type": "text/plain",
+            "X-Bot-Token": self.settings.bot_token,
+        }
+
+        for content_length in ("not-a-length", "-1", "16385"):
+            with self.subTest(content_length=content_length):
+                response = client.post(
+                    "/api/reply?room=room1",
+                    content="숲봇아 안녕",
+                    headers={**headers, "Content-Length": content_length},
+                )
+
+                self.assertEqual(400, response.status_code)
+
+        self.assertEqual([], self.provider.questions)
+
+    def test_chunked_oversized_body_stops_after_the_first_overflow_chunk(self) -> None:
+        client_app = self.client_for().app
+        chunks_read: list[str] = []
+
+        async def oversized_chunks():
+            chunks_read.append("at-cap")
+            yield b"a" * 16_384
+            chunks_read.append("overflow")
+            yield b"b"
+            chunks_read.append("past-cap")
+            yield b"c"
+
+        async def send_request():
+            async with AsyncClient(
+                transport=ASGITransport(app=client_app), base_url="http://testserver"
+            ) as client:
+                return await client.post(
+                    "/api/reply?room=room1",
+                    content=oversized_chunks(),
+                    headers={
+                        "Content-Type": "text/plain",
+                        "X-Bot-Token": self.settings.bot_token,
+                    },
+                )
+
+        response = asyncio.run(send_request())
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(["at-cap", "overflow"], chunks_read)
         self.assertEqual([], self.provider.questions)
 
     def test_trigger_returns_plain_text_generated_reply(self) -> None:

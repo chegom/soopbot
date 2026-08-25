@@ -91,7 +91,7 @@ def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
         if content_type.split(";", 1)[0].strip().lower() != "text/plain":
             return PlainTextResponse("bad request", status_code=400)
 
-        body = await request.body()
+        body = await _read_limited_body(request)
         if not body or len(body) > _MAX_BODY_BYTES:
             return PlainTextResponse("bad request", status_code=400)
 
@@ -135,6 +135,22 @@ def create_app(runtime_provider: Callable[[], Runtime]) -> FastAPI:
         return PlainTextResponse(outcome.content)
 
     return app
+
+
+async def _read_limited_body(request: Request) -> bytes | None:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        if not content_length.isascii() or not content_length.isdecimal():
+            return None
+        if int(content_length) > _MAX_BODY_BYTES:
+            return None
+
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > _MAX_BODY_BYTES:
+            return None
+        body.extend(chunk)
+    return bytes(body)
 
 
 def _request_keys(room: str, body: bytes, event_id: str | None) -> tuple[str, str]:
