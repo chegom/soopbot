@@ -1,12 +1,12 @@
 # 문제 해결
 
-먼저 Vercel 주소 `https://<project>.vercel.app/api/reply`를 브라우저에서 여세요. 비밀값 없이도 `ok`가 보이는 것이 정상입니다. 그다음 MacroDroid 시스템 로그에서 `soopbot_status`와 `soopbot_reply`를 확인하면 문제 범위를 빠르게 좁힐 수 있습니다.
+먼저 Vercel 주소 `https://<project>.vercel.app/api/reply`를 브라우저에서 여세요. 비밀값 없이도 `ok`가 보이는 것이 정상입니다. 그다음 MacroDroid 시스템 로그에서 전역 변수 `soopbot_status`와 `soopbot_reply`를 확인하면 문제 범위를 빠르게 좁힐 수 있습니다.
 
 ## 상태 코드별 확인
 
 | 상태/증상 | 뜻 | 확인할 것 |
 | --- | --- | --- |
-| `200` + 답변 | 정상 처리 | Notification Reply가 실행되지 않으면 `soopbot_reply` 저장 변수, If 조건, **Use Notification Trigger**를 확인 |
+| `200` + 답변 | 정상 처리 | Notification Reply가 실행되지 않으면 전역 `soopbot_reply` 저장 변수, If 조건, **Use Notification Trigger**를 확인 |
 | `204` + 빈 본문 | 답할 요청이 아님 | 호출어 불일치, URL의 `room`과 `SOOPBOT_ROOM_KEY` 불일치, 같은 알림 중복 전송 여부 확인 |
 | `400` | 요청 형식이 잘못됨 | POST인지, 본문이 비어 있지 않은지, Content Type이 `text/plain; charset=utf-8`인지 확인. 너무 긴 알림도 줄여서 재시도 |
 | `401` | 토큰 불일치 | `X-Bot-Token` 철자와 값이 Vercel의 `SOOPBOT_TOKEN`과 완전히 같은지 확인. 따옴표·앞뒤 공백을 제거하고 Vercel 재배포 |
@@ -24,7 +24,7 @@ OpenAI 호출 자체가 실패하면 HTTP `200`과 함께 `지금은 답변을 �
 2. 공폰의 **설정 → 알림 접근**에서 MacroDroid가 허용되어 있는지 확인합니다.
 3. 카카오톡 알림이 공폰에 실제로 나타나는지 확인합니다. 해당 방 알림을 꺼 두었다면 트리거가 동작하지 않습니다.
 4. 트리거의 카카오톡 앱, 정확한 방 제목, `숲봇아` 포함 조건을 확인합니다.
-5. HTTP 동작 앞에서 `soopbot_reply`를 비우고 `soopbot_status=0`으로 만드는지 확인합니다.
+5. HTTP 동작 앞에서 전역 `soopbot_reply`를 비우고 전역 `soopbot_status=0`으로 만드는지 확인합니다.
 6. HTTP 동작의 완료 차단 옵션과 60초 제한 시간을 확인합니다.
 7. Vercel 함수 로그에서 요청 시간대의 상태를 확인합니다. 로그에 질문이나 토큰을 직접 출력하는 코드는 추가하지 마세요.
 8. 제조사 배터리 최적화에서 MacroDroid를 제외하고 다시 테스트합니다.

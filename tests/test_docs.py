@@ -65,6 +65,24 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotRegex(content, r"(?im)^OPENAI_API_KEY\s*=\s*sk-")
         self.assertNotRegex(content, r"(?im)^SOOPBOT_TOKEN\s*=\s*[A-Za-z0-9]{24,}\s*$")
 
+    def test_macrodroid_trigger_separates_exact_title_and_message_filters(self) -> None:
+        content = (ROOT / "docs" / "macrodroid-setup.md").read_text(encoding="utf-8")
+        trigger_section = content.split("## 1. 새 매크로와 트리거 만들기", 1)[1].split(
+            "## 2. 응답 변수 초기화하기", 1
+        )[0]
+
+        self.assertIn("Separate title and message", trigger_section)
+        self.assertRegex(trigger_section, r"Title.*Matches.*정확한 방 제목")
+        self.assertRegex(trigger_section, r"Message.*Contains.*`숲봇아`")
+
+    def test_macrodroid_response_variables_are_global_and_use_global_reference(self) -> None:
+        content = (ROOT / "docs" / "macrodroid-setup.md").read_text(encoding="utf-8")
+
+        self.assertIn("전역 문자열 변수 `soopbot_reply`", content)
+        self.assertIn("전역 정수 변수 `soopbot_status`", content)
+        self.assertIn("[v=soopbot_reply]", content)
+        self.assertNotRegex(content, r"지역 .*`soopbot_(?:reply|status)`")
+
 
 if __name__ == "__main__":
     unittest.main()

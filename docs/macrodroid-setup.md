@@ -20,9 +20,10 @@ MacroDroid 공식 설명도 함께 확인할 수 있습니다.
 1. MacroDroid에서 새 매크로를 만들고 이름을 `숲봇`으로 정합니다.
 2. 트리거로 **Notification Received**(알림 수신)를 선택합니다.
 3. 애플리케이션은 **카카오톡만** 선택합니다.
-4. 알림 제목/대화방 조건은 대상 방의 제목과 **완전히 같게** 설정합니다. 예: `우리 동네 AI 숲`.
-5. 알림 내용 조건은 **포함(Contains)** `숲봇아`로 설정합니다.
-6. 봇 계정이 보낸 알림은 제외합니다. 발신자 조건을 지원하는 화면에서는 봇의 정확한 카카오톡 이름을 **제외(Excludes)**에 넣으세요. 기기에서 발신자와 본문이 합쳐져 보인다면 실제 자기 답변 알림 형식에 맞춰 같은 제외 조건을 추가합니다.
+4. **Separate title and message**(제목과 메시지 분리) 모드를 켭니다.
+5. **Title → Matches**를 선택하고 정확한 방 제목을 입력합니다. 예: `우리 동네 AI 숲`.
+6. **Message → Contains**를 선택하고 `숲봇아`를 입력합니다.
+7. 봇 계정이 보낸 알림은 제외합니다. 발신자 조건을 지원하는 화면에서는 봇의 정확한 카카오톡 이름을 **제외(Excludes)**에 넣으세요. 기기에서 발신자와 본문이 합쳐져 보인다면 실제 자기 답변 알림 형식에 맞춰 같은 제외 조건을 추가합니다.
 
 마지막 제외 조건은 답변이 다시 매크로를 실행하는 재귀를 막기 위한 필수 안전장치입니다. 처음에는 테스트 방 한 곳만 지정하세요.
 
@@ -30,10 +31,10 @@ MacroDroid 공식 설명도 함께 확인할 수 있습니다.
 
 HTTP 요청보다 앞에 다음 두 동작을 이 순서로 추가합니다.
 
-1. 문자열 변수 `soopbot_reply`를 만들고 **빈 문자열로 설정/초기화**합니다.
-2. 정수 변수 `soopbot_status`를 만들고 **`0`으로 설정**합니다.
+1. **전역(Global)** 범위의 전역 문자열 변수 `soopbot_reply`를 만들고 **빈 문자열로 설정/초기화**합니다.
+2. **전역(Global)** 범위의 전역 정수 변수 `soopbot_status`를 만들고 **`0`으로 설정**합니다.
 
-두 변수는 매 요청 전에 반드시 초기화해야 합니다. 이전 요청의 답이나 상태 코드가 남으면 실패한 요청 뒤에 예전 답장을 보낼 수 있습니다.
+두 변수는 모두 전역 변수로 만들고 매 요청 전에 반드시 초기화해야 합니다. 이전 요청의 답이나 상태 코드가 남으면 실패한 요청 뒤에 예전 답장을 보낼 수 있습니다. 전역 문자열 변수는 Notification Reply에서 `[v=soopbot_reply]`로 참조합니다.
 
 ## 3. HTTP Request 동작 추가하기
 
@@ -48,8 +49,8 @@ HTTP 요청보다 앞에 다음 두 동작을 이 순서로 추가합니다.
 | Header 이름 | `X-Bot-Token` |
 | Header 값 | Vercel의 `SOOPBOT_TOKEN`과 동일한 24자 이상 토큰 |
 | Timeout | `60`초 |
-| 응답 본문 저장 | 문자열 변수 `soopbot_reply` |
-| HTTP 반환 코드 저장 | 정수 변수 `soopbot_status` |
+| 응답 본문 저장 | 전역 문자열 변수 `soopbot_reply` |
+| HTTP 반환 코드 저장 | 전역 정수 변수 `soopbot_status` |
 | 실행 방식 | **Block next action until complete** 활성화 |
 
 토큰 값에는 따옴표를 붙이지 마세요. URL의 `<project>`는 실제 Vercel 프로젝트 도메인으로 바꿉니다. Vercel의 `SOOPBOT_ROOM_KEY`를 바꾼 경우에는 `room=room1`도 같은 값으로 바꿔야 합니다.
@@ -59,8 +60,8 @@ HTTP 요청보다 앞에 다음 두 동작을 이 순서로 추가합니다.
 ## 4. 성공했을 때만 알림 답장하기
 
 1. **If 절**을 추가합니다.
-2. 첫 조건은 정수 변수 `soopbot_status == 200`입니다.
-3. AND 조건으로 문자열 변수 `soopbot_reply`가 비어 있지 않음을 추가합니다.
+2. 첫 조건은 전역 정수 변수 `soopbot_status == 200`입니다.
+3. AND 조건으로 전역 문자열 변수 `soopbot_reply`가 비어 있지 않음을 추가합니다.
 4. If 안에 **Notification Reply** 동작을 넣습니다.
 5. 알림 선택은 **Use Notification Trigger**를 사용해 이 매크로를 시작한 카카오톡 알림을 가리킵니다.
 6. 답장 텍스트는 `[v=soopbot_reply]`로 지정합니다.
@@ -69,9 +70,10 @@ HTTP 요청보다 앞에 다음 두 동작을 이 순서로 추가합니다.
 최종 순서는 다음과 같아야 합니다.
 
 ```text
-Notification Received: 카카오톡 + 정확한 방 제목 + 본문에 숲봇아 + 봇 발신자 제외
-  → soopbot_reply = ""
-  → soopbot_status = 0
+Notification Received: 카카오톡 + Separate title and message
+  + Title Matches 정확한 방 제목 + Message Contains 숲봇아 + 봇 발신자 제외
+  → 전역 soopbot_reply = ""
+  → 전역 soopbot_status = 0
   → HTTP Request (완료될 때까지 다음 동작 차단)
   → If soopbot_status == 200 AND soopbot_reply is not empty
       → Notification Reply: [v=soopbot_reply]
