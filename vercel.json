@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": "src/soopbot/**"
+    }
+  }
+}
