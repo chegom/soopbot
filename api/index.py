@@ -20,6 +20,7 @@ if str(_SOURCE_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(_SOURCE_DIRECTORY))
 
 from soopbot.config import Settings, load_bot_token
+from soopbot.conversation import Turn
 from soopbot.provider import OpenAIProvider
 from soopbot.reply import ReplyService
 from soopbot.request_guard import MemoryRequestGuard
@@ -67,12 +68,16 @@ class _LazyOpenAIProvider:
         self._provider: OpenAIProvider | None = None
         self._lock = threading.Lock()
 
-    def generate(self, *, persona: str, question: str) -> str:
+    def generate(
+        self, *, persona: str, question: str, context: tuple[Turn, ...] = ()
+    ) -> str:
         if self._provider is None:
             with self._lock:
                 if self._provider is None:
                     self._provider = OpenAIProvider(self._settings)
-        return self._provider.generate(persona=persona, question=question)
+        return self._provider.generate(
+            persona=persona, question=question, context=context
+        )
 
 
 class _UnauthorizedRequest(Exception):
