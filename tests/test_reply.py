@@ -1,6 +1,8 @@
 import unittest
+from dataclasses import replace
 
 from soopbot.config import Settings
+from soopbot.conversation import MemoryConversationLog, Turn
 from soopbot.reply import ReplyService, extract_question
 
 
@@ -8,12 +10,14 @@ class RecordingProvider:
     def __init__(self) -> None:
         self.questions: list[str] = []
         self.personas: list[str] = []
+        self.contexts: list[tuple] = []
         self.response = "답변입니다"
         self.error: Exception | None = None
 
-    def generate(self, *, persona: str, question: str) -> str:
+    def generate(self, *, persona: str, question: str, context=()) -> str:
         self.personas.append(persona)
         self.questions.append(question)
+        self.contexts.append(tuple(context))
         if self.error is not None:
             raise self.error
         return self.response
@@ -68,6 +72,63 @@ class ReplyServiceTest(unittest.TestCase):
     def test_message_of_4000_or_more_characters_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             self.service.handle("숲봇아" + "가" * 3997)
+
+    def _service_with_history(self, turns: int) -> ReplyService:
+        settings = replace(self.settings, max_history_turns=turns)
+        return ReplyService(settings, self.provider, MemoryConversationLog())
+
+    def test_previous_turn_becomes_context_for_the_next_question(self) -> None:
+        service = self._service_with_history(4)
+        self.provider.response = "파이썬을 추천해요"
+        service.handle("숲봇아 어떤 언어를 배울까?")
+
+        service.handle("숲봇아 왜 그렇지?")
+
+        self.assertEqual((), self.provider.contexts[0])
+        self.assertEqual(
+            (Turn("어떤 언어를 배울까?", "파이썬을 추천해요"),),
+            self.provider.contexts[1],
+        )
+
+    def test_context_keeps_only_the_newest_turns(self) -> None:
+        service = self._service_with_history(2)
+        for index in range(1, 4):
+            self.provider.response = f"답변{index}"
+            service.handle(f"숲봇아 질문{index}")
+
+        service.handle("숲봇아 이어서")
+
+        self.assertEqual(
+            (Turn("질문2", "답변2"), Turn("질문3", "답변3")),
+            self.provider.contexts[-1],
+        )
+
+    def test_zero_history_turns_keeps_replies_stateless(self) -> None:
+        service = self._service_with_history(0)
+        service.handle("숲봇아 첫 질문")
+
+        service.handle("숲봇아 두번째 질문")
+
+        self.assertEqual((), self.provider.contexts[-1])
+
+    def test_failed_answers_are_never_remembered(self) -> None:
+        service = self._service_with_history(4)
+        self.provider.error = RuntimeError("provider down")
+        with self.assertLogs("soopbot.reply", level="WARNING"):
+            service.handle("숲봇아 실패할 질문")
+        self.provider.error = None
+
+        service.handle("숲봇아 다음 질문")
+
+        self.assertEqual((), self.provider.contexts[-1])
+
+    def test_bare_trigger_introduction_is_never_remembered(self) -> None:
+        service = self._service_with_history(4)
+        service.handle("숲봇아")
+
+        service.handle("숲봇아 진짜 질문")
+
+        self.assertEqual((), self.provider.contexts[-1])
 
     def test_provider_output_is_truncated_to_configured_limit(self) -> None:
         self.provider.response = "가" * 120

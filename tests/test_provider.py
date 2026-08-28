@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from soopbot.config import Settings
+from soopbot.conversation import Turn
 from soopbot.provider import OpenAIProvider, OpenAIProviderError
 
 
@@ -116,3 +117,43 @@ class OpenAIProviderTest(unittest.TestCase):
         self.assertNotIn("SDK detail", str(raised.exception))
         self.assertNotIn("PRIVATE", "\n".join(captured.output))
         self.assertNotIn("SDK detail", "\n".join(captured.output))
+
+
+class OpenAIProviderContextTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.settings = Settings(
+            openai_api_key="test-openai-key",
+            bot_token="t" * 24,
+            trigger="숲봇아",
+            persona="친절한 숲봇",
+            room_key="room1",
+            model="test-model",
+            max_output_chars=1000,
+            max_output_tokens=500,
+            timeout_seconds=40,
+            requests_per_minute=10,
+            max_history_turns=4,
+        )
+
+    def test_prior_turns_are_rendered_into_the_request(self) -> None:
+        client = FakeClient()
+        provider = OpenAIProvider(self.settings, client=client)
+
+        provider.generate(
+            persona="친절한 숲봇",
+            question="왜 그렇지?",
+            context=(Turn("어떤 언어를 배울까?", "파이썬을 추천해요"),),
+        )
+
+        sent = client.responses.call["input"]
+        self.assertIn("어떤 언어를 배울까?", sent)
+        self.assertIn("파이썬을 추천해요", sent)
+        self.assertIn("왜 그렇지?", sent)
+
+    def test_empty_context_is_stated_explicitly(self) -> None:
+        client = FakeClient()
+        provider = OpenAIProvider(self.settings, client=client)
+
+        provider.generate(persona="친절한 숲봇", question="안녕", context=())
+
+        self.assertIn("이전 대화 없음", client.responses.call["input"])

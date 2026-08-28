@@ -44,3 +44,24 @@ class SettingsTest(unittest.TestCase):
             with self.subTest(expected_name):
                 with self.assertRaisesRegex(ValueError, expected_name):
                     Settings.from_environ(environment)
+
+
+class HistoryTurnsSettingTest(unittest.TestCase):
+    @staticmethod
+    def _environ(**overrides: str) -> dict[str, str]:
+        values = {"OPENAI_API_KEY": "test-key", "SOOPBOT_TOKEN": "t" * 24}
+        values.update(overrides)
+        return values
+
+    def test_history_turns_defaults_to_four(self) -> None:
+        self.assertEqual(4, Settings.from_environ(self._environ()).max_history_turns)
+
+    def test_history_turns_may_be_disabled(self) -> None:
+        settings = Settings.from_environ(
+            self._environ(SOOPBOT_MAX_HISTORY_TURNS="0")
+        )
+        self.assertEqual(0, settings.max_history_turns)
+
+    def test_history_turns_above_the_ceiling_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Settings.from_environ(self._environ(SOOPBOT_MAX_HISTORY_TURNS="11"))

@@ -17,10 +17,12 @@ from soopbot.request_guard import MemoryRequestGuard
 class RecordingProvider:
     def __init__(self) -> None:
         self.questions: list[str] = []
+        self.contexts: list[tuple] = []
         self.response = "생성한 답변"
 
-    def generate(self, *, persona: str, question: str) -> str:
+    def generate(self, *, persona: str, question: str, context=()) -> str:
         self.questions.append(question)
+        self.contexts.append(tuple(context))
         return self.response
 
 

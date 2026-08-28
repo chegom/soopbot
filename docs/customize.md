@@ -42,8 +42,11 @@ Vercel만 바꾸면 MacroDroid가 요청을 보내지 않고, MacroDroid만 바�
 | `SOOPBOT_MAX_OUTPUT_TOKENS` | `500` | OpenAI가 생성할 최대 출력 토큰, 1~4,000 |
 | `SOOPBOT_TIMEOUT_SECONDS` | `40` | OpenAI 요청 제한 시간, 1~120초 |
 | `SOOPBOT_REQUESTS_PER_MINUTE` | `10` | 한 warm Vercel 인스턴스에서 방별로 적용하는 분당 요청 한도, 1~120 |
+| `SOOPBOT_MAX_HISTORY_TURNS` | `4` | 답변할 때 참고할 최근 대화 턴 수, 0~10. `0`으로 두면 이전 대화를 참고하지 않고 한 질문씩 독립해서 답합니다 |
 
 MacroDroid HTTP 제한 시간은 기본 안내대로 60초를 유지하세요. 서버의 `SOOPBOT_TIMEOUT_SECONDS`를 60초보다 길게 잡으면 공폰이 먼저 기다리기를 끝낼 수 있습니다.
+
+`SOOPBOT_MAX_HISTORY_TURNS`로 기억하는 대화는 **warm Vercel 인스턴스의 메모리에만** 남습니다. 디스크에 쓰지 않고, 마지막 사용에서 30분이 지나거나 인스턴스가 종료되면 사라지며 인스턴스끼리 공유되지 않습니다. 그래서 문맥이 이어질 때도 있고 끊길 때도 있습니다. 턴 수를 늘리면 요청마다 보내는 토큰이 늘어 비용도 함께 오릅니다.
 
 `SOOPBOT_REQUESTS_PER_MINUTE`는 **warm Vercel 인스턴스별 best-effort** 제한입니다. 여러 인스턴스가 상태를 공유하지 않으므로 전역 비용 상한이 아닙니다. 비용 관리는 숲봇 전용 OpenAI 프로젝트와 API 키를 만들고 프로젝트의 usage/spend limits 및 알림을 설정해 보완하세요. 계정과 모델에는 [모델별 rate limit](https://help.openai.com/en/articles/9186755)도 별도로 적용됩니다.
 
