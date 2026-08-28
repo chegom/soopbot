@@ -49,6 +49,17 @@ class DocumentationContractTests(unittest.TestCase):
         )
         self.assertIn("개인정보나 비밀", content)
 
+    def test_in_memory_history_is_disclosed_as_instance_local_and_bounded(self) -> None:
+        content = README.read_text(encoding="utf-8")
+        customize = (ROOT / "docs" / "customize.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("이전 대화 문맥 없이", content)
+        self.assertIn("warm Vercel 인스턴스의 메모리", content)
+        self.assertIn("`SOOPBOT_MAX_HISTORY_TURNS`", content)
+        self.assertIn("30분", content)
+        self.assertIn("`SOOPBOT_MAX_HISTORY_TURNS`", customize)
+        self.assertIn("`0`으로 두면", customize)
+
     def test_vercel_clone_link_requires_only_the_two_secrets(self) -> None:
         if not README.is_file():
             self.fail("README.md must provide the public deployment entry point")

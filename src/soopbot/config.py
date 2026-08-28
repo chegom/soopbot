@@ -17,6 +17,7 @@ class Settings:
     max_output_tokens: int
     timeout_seconds: int
     requests_per_minute: int
+    max_history_turns: int = 4
 
     @classmethod
     def from_environ(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -48,6 +49,9 @@ class Settings:
             ),
             requests_per_minute=_integer(
                 values, "SOOPBOT_REQUESTS_PER_MINUTE", 10, minimum=1, maximum=120
+            ),
+            max_history_turns=_integer(
+                values, "SOOPBOT_MAX_HISTORY_TURNS", 4, minimum=0, maximum=10
             ),
         )
 
